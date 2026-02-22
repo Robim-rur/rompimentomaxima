@@ -38,7 +38,7 @@ ativos_scan = sorted(set([
 ]))
 
 # =====================================================
-# MOTOR DO SCANNER (FILTROS DE ALTA PRECISÃO)
+# MOTOR DO SCANNER (EQUILIBRADO)
 # =====================================================
 def executar_scanner(tickers):
     lista_sucesso = []
@@ -47,46 +47,38 @@ def executar_scanner(tickers):
     for i, ticker in enumerate(tickers):
         try:
             acao = yf.Ticker(ticker)
-            df = acao.history(period="1y") # 1 ano para pegar o topo real
+            df = acao.history(period="6mo")
             
-            if len(df) < 100: continue
+            if len(df) < 30: continue
 
-            # Dados Atuais
             hoje = df.iloc[-1]
             ontem = df.iloc[-2]
-            maxima_historica = df['Close'].max()
+            topo_max = df['Close'].max()
             
-            # --- FILTROS RÍGIDOS (O FUNIL) ---
-            # 1. Rompimento de Máxima de Ontem (Setup Ricardo Brasil)
-            rompeu_ontem = hoje['Close'] > ontem['High']
-            
-            # 2. Filtro de Topo Absoluto (Deve estar no topo ou a 0.5% dele)
-            no_topo_absoluto = hoje['Close'] >= (maxima_historica * 0.995)
-            
-            # 3. Filtro de Volume (Volume hoje deve ser maior que a média de 20 dias)
-            volume_hoje = hoje['Volume']
-            media_volume = df['Volume'].tail(20).mean()
-            volume_forte = volume_hoje > media_volume
+            # FILTROS RECALIBRADOS (Lógica original que deu certo)
+            rompeu_ontem = hoje['Close'] >= ontem['High']
+            esta_no_topo = hoje['Close'] >= (topo_max * 0.985) # 1.5% de margem do topo
+            volume_financeiro = hoje['Close'] * hoje['Volume']
 
-            # SÓ PASSA SE TIVER OS 3 CRITÉRIOS JUNTOS
-            if rompeu_ontem and no_topo_absoluto and volume_forte:
-                
-                # Cálculo de Probabilidade (Sharpe Ratio simplificado)
+            if rompeu_ontem and esta_no_topo and volume_financeiro > 1000000:
+                # Estatísticas
                 retornos = df['Close'].pct_change()
                 vol = retornos.tail(20).std()
                 mom = retornos.tail(5).sum()
-                prob = round(min(max((mom / vol) * 10 if vol > 0 else 0, 0), 100), 2)
                 
-                # Valores de Execução
+                score = (mom / vol) if vol > 0 else 0
+                prob = round(min(max(score * 10, 0), 100), 2)
+                
+                # Execução
                 entrada = round(float(hoje['High'] + 0.01), 2)
                 stop = round(float(hoje['Low'] - 0.01), 2)
                 
-                # Cálculos de % solicitados
+                # CÁLCULO DE LOSS (%) - O que você pediu
                 risco_loss = round(((entrada - stop) / entrada) * 100, 2)
-                ganho_est = round((vol * 2) * 100, 2)
+                ganho_est = round((vol * 2.2) * 100, 2)
 
-                # Filtro final: Probabilidade deve ser superior a 70% para entrar na lista de elite
-                if prob > 70:
+                # Mostra apenas o que tem força real (Probabilidade > 10)
+                if prob > 10:
                     lista_sucesso.append({
                         "Ativo": ticker,
                         "Probabilidade (%)": prob,
@@ -104,16 +96,16 @@ def executar_scanner(tickers):
 # =====================================================
 # INTERFACE
 # =====================================================
-st.title("🎯 Scanner de Elite: Rompimento de Máxima")
-st.markdown("### Filtro Rigoroso: Apenas Ativos com Alta Convergência")
+st.title("🎯 Scanner de Rompimento de Máxima")
+st.markdown("---")
 
-if st.button("🚀 EXECUTAR SCANNER"):
-    with st.spinner("Analisando 178 ativos com filtros rígidos..."):
+if st.button("🚀 BUSCAR MELHORES OPORTUNIDADES"):
+    with st.spinner("Analisando ativos..."):
         df_final = executar_scanner(ativos_scan)
         
         if not df_final.empty:
             df_final = df_final.sort_values(by="Probabilidade (%)", ascending=False)
-            st.subheader("🔥 Top Ativos para Compra")
+            st.subheader("🔥 Top Oportunidades")
             st.dataframe(
                 df_final.style.format({
                     "Probabilidade (%)": "{:.2f}%",
@@ -123,7 +115,6 @@ if st.button("🚀 EXECUTAR SCANNER"):
                 use_container_width=True
             )
         else:
-            st.warning("Nenhum ativo atingiu o rigor do filtro hoje. Aguarde o próximo pregão.")
+            st.warning("Nenhum ativo rompeu com os critérios técnicos hoje.")
 
-st.divider()
-st.caption("Critérios: Rompimento + Topo Real + Volume Forte + Momentum > 70%")
+st.caption(f"Foco: Buy Side | Versão Estável | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
