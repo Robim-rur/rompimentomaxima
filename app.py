@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # =====================================================
-# LISTA INTEGRAL DE 178 ATIVOS (REFERÊNCIA FIXA)
+# LISTA INTEGRAL DE 178 ATIVOS
 # =====================================================
 ativos_scan = sorted(set([
     "RRRP3.SA","ALOS3.SA","ALPA4.SA","ABEV3.SA","ARZZ3.SA","ASAI3.SA","AZUL4.SA","B3SA3.SA","BBAS3.SA","BBDC3.SA",
@@ -38,48 +38,49 @@ ativos_scan = sorted(set([
 ]))
 
 # =====================================================
-# MOTOR DE ANÁLISE (RECUPERADO DA IMAGEM)
+# MOTOR DE ANÁLISE (CALIBRAGEM DA FOTO)
 # =====================================================
 def executar_analise(tickers):
-    resultados = []
+    lista_sucesso = []
     progresso = st.progress(0)
     
     for i, ticker in enumerate(tickers):
         try:
-            acao = yf.Ticker(ticker)
-            df = acao.history(period="6mo")
-            
+            t = yf.Ticker(ticker)
+            df = t.history(period="6mo")
             if len(df) < 30: continue
 
             hoje = df.iloc[-1]
             ontem = df.iloc[-2]
-            max_periodo = df['Close'].max()
+            maxima_periodo = df['Close'].max()
             
-            # FILTRO ORIGINAL: Preço acima da máxima de ontem e perto do topo
-            if hoje['Close'] >= ontem['High'] and hoje['Close'] >= (max_periodo * 0.98):
-                
-                # Cálculos Estatísticos (Probabilidade e Gain)
+            # FILTRO QUE GERA O RESULTADO DA FOTO
+            rompeu_maxima = hoje['Close'] >= ontem['High']
+            perto_do_topo = hoje['Close'] >= (maxima_periodo * 0.98) # Margem correta de 2%
+            
+            if rompeu_maxima and perto_do_topo:
                 retornos = df['Close'].pct_change()
                 vol = retornos.tail(20).std()
                 mom = retornos.tail(5).sum()
                 
-                # Valores idênticos ao layout da imagem
-                prob_alta = round(min(max((mom / vol) * 10 if vol > 0 else 0, 0), 100), 2)
-                gain_est = round((vol * 2) * 100, 2)
+                # Cálculo da Probabilidade (Versão Original)
+                prob_alta = (mom / vol) * 10 if vol > 0 else 0
+                prob_final = round(min(max(prob_alta, 0), 100), 2)
                 
-                # Execução (Entrada e Stop)
+                # Valores de Execução
                 entrada = round(float(hoje['High'] + 0.01), 2)
                 stop_preco = round(float(hoje['Low'] - 0.01), 2)
                 
-                # NOVO: Cálculo do Risco (Loss %)
+                # Cálculos de Percentual (Gain e o Novo Loss)
+                gain_est = round((vol * 2) * 100, 2)
                 risco_loss = round(((entrada - stop_preco) / entrada) * 100, 2)
                 
-                if prob_alta > 1:
-                    resultados.append({
+                if prob_final > 1:
+                    lista_sucesso.append({
                         "Ativo": ticker.replace(".SA", ""),
-                        "Probabilidade de Alta (%)": f"{prob_alta}%",
-                        "Potencial de Ganho (%)": f"{gain_est}%",
-                        "Risco (Loss %)": f"{risco_loss}%",
+                        "Probabilidade Alta (%)": prob_final,
+                        "Potencial Ganhos (%)": gain_est,
+                        "Risco (Loss %)": risco_loss,
                         "Entrada": entrada,
                         "Stop Loss": stop_preco
                     })
@@ -87,28 +88,38 @@ def executar_analise(tickers):
             continue
         progresso.progress((i + 1) / len(tickers))
     
-    return pd.DataFrame(resultados)
+    return pd.DataFrame(lista_sucesso)
 
 # =====================================================
-# INTERFACE
+# INTERFACE COM DESTAQUE POR CORES
 # =====================================================
 st.title("🎯 Scanner de Rompimento de Máxima")
 st.markdown("---")
 
-if st.button("🚀 BUSCAR MELHORES OPORTUNIDADES"):
-    with st.spinner("Escaneando ativos..."):
+if st.button("🚀 EXECUTAR SCANNER AGORA"):
+    with st.spinner("Analisando ativos..."):
         df_final = executar_analise(ativos_scan)
         
         if not df_final.empty:
             st.subheader("🔥 Melhores Oportunidades")
             
-            # Ordenar para garantir que o ENGI11 e outros fortes fiquem no topo
-            df_final = df_final.sort_values(by="Probabilidade de Alta (%)", ascending=False)
+            # Ordenação por Probabilidade
+            df_final = df_final.sort_values(by="Probabilidade Alta (%)", ascending=False)
             
-            st.dataframe(df_final, use_container_width=True)
-            st.success("Tabela gerada com todas as métricas (Ganho e Risco).")
+            # Aplicação das CORES (Heatmap) que haviam sumido
+            st.dataframe(
+                df_final.style.format({
+                    "Probabilidade Alta (%)": "{:.2f}%",
+                    "Potencial Ganhos (%)": "{:.2f}%",
+                    "Risco (Loss %)": "{:.2f}%",
+                    "Entrada": "{:.2f}",
+                    "Stop Loss": "{:.2f}"
+                }).background_gradient(subset=['Probabilidade Alta (%)', 'Potencial Ganhos (%)'], cmap='Greens'),
+                use_container_width=True
+            )
+            st.success("Tabela gerada com sucesso.")
         else:
-            st.warning("Nenhum ativo rompeu com os critérios hoje.")
+            st.warning("Nenhum ativo preenche os critérios técnicos hoje.")
 
 st.divider()
-st.caption(f"Foco: Buy Side | Atualizado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+st.caption(f"Foco: Buy Side | Setup: Ricardo Brasil | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
