@@ -38,7 +38,7 @@ ativos_scan = sorted(set([
 ]))
 
 # =====================================================
-# MOTOR DE ANÁLISE (LÓGICA MANTIDA)
+# MOTOR DE ANÁLISE (LÓGICA CONSERVADA)
 # =====================================================
 def executar_analise(tickers):
     lista_sucesso = []
@@ -54,7 +54,7 @@ def executar_analise(tickers):
             ontem = df.iloc[-2]
             maxima_periodo = df['Close'].max()
             
-            # FILTRO MANTIDO (IGUAL AO ANTERIOR)
+            # FILTRO MANTIDO CONFORME RESULTADO ANTERIOR
             rompeu_maxima = hoje['Close'] >= ontem['High']
             perto_do_topo = hoje['Close'] >= (maxima_periodo * 0.98)
             
@@ -68,14 +68,14 @@ def executar_analise(tickers):
                 
                 # Valores de Execução
                 entrada = round(float(hoje['High'] + 0.01), 2)
-                stop_loss = round(float(hoje['Low'] - 0.01), 2)
+                stop_loss_preco = round(float(hoje['Low'] - 0.01), 2)
                 
-                # Cálculos de Percentual e o Novo STOP GAIN
+                # Cálculos de Percentual
                 gain_percent = round((vol * 2) * 100, 2)
-                risco_loss = round(((entrada - stop_loss) / entrada) * 100, 2)
+                risco_loss = round(((entrada - stop_loss_preco) / entrada) * 100, 2)
                 
-                # Cálculo do Preço de Stop Gain (Entrada + % de Ganho Estimado)
-                stop_gain = round(entrada * (1 + (gain_percent / 100)), 2)
+                # Preço de Alvo
+                stop_gain_preco = round(entrada * (1 + (gain_percent / 100)), 2)
                 
                 if prob_final > 1:
                     lista_sucesso.append({
@@ -84,8 +84,8 @@ def executar_analise(tickers):
                         "Potencial Ganhos (%)": gain_percent,
                         "Risco (Loss %)": risco_loss,
                         "Entrada": entrada,
-                        "Stop Gain": stop_gain,
-                        "Stop Loss": stop_loss
+                        "Stop Gain": stop_gain_preco,
+                        "Stop Loss": stop_loss_preco
                     })
         except:
             continue
@@ -118,7 +118,7 @@ if st.button("🚀 EXECUTAR SCANNER AGORA"):
                 }).background_gradient(subset=['Probabilidade Alta (%)', 'Potencial Ganhos (%)'], cmap='Greens'),
                 use_container_width=True
             )
-            st.success("Scanner finalizado com sucesso.")
+            st.success("Tabela gerada com sucesso.")
         else:
             st.warning("Nenhum ativo preenche os critérios técnicos hoje.")
 
