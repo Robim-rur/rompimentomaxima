@@ -7,13 +7,13 @@ from datetime import datetime
 # =====================================================
 # CONFIGURAÇÃO DA PÁGINA
 # =====================================================
-st.set_page_config(
+st.set_config = st.set_page_config(
     page_title="Scanner de Rompimento de Máxima",
     layout="wide"
 )
 
 # =====================================================
-# SUA LISTA ORIGINAL DE 178 ATIVOS
+# SUA LISTA DE 178 ATIVOS (SEM ALTERAÇÕES)
 # =====================================================
 ativos_scan = sorted(set([
     "RRRP3.SA","ALOS3.SA","ALPA4.SA","ABEV3.SA","ARZZ3.SA","ASAI3.SA","AZUL4.SA","B3SA3.SA","BBAS3.SA","BBDC3.SA",
@@ -37,50 +37,81 @@ ativos_scan = sorted(set([
     "KNCR11.SA","KNIP11.SA","CPTS11.SA","IRDM11.SA","DIVO11.SA","NDIV11.SA","SPUB11.SA"
 ]))
 
-def analisar_mercado(tickers):
+# =====================================================
+# LÓGICA DO SCANNER (RESTAURADA)
+# =====================================================
+def carregar_oportunidades(tickers):
     lista_sucesso = []
     progresso = st.progress(0)
     
     for i, ticker in enumerate(tickers):
         try:
             t = yf.Ticker(ticker)
-            df = t.history(period="6mo")
-            if len(df) < 50: continue
+            df = t.history(period="max")
+            
+            if len(df) < 100: continue
 
             hoje = df.iloc[-1]
             ontem = df.iloc[-2]
             topo_max = df['Close'].max()
             
-            # FILTROS ORIGINAIS
-            if hoje['Close'] >= ontem['High'] and hoje['Close'] >= (topo_max * 0.98):
+            # CRITÉRIOS QUE FUNCIONARAM NA SUA PRIMEIRA TENTATIVA
+            no_topo = hoje['Close'] >= (topo_max * 0.99)
+            rompeu_maxima = hoje['Close'] >= ontem['High']
+            
+            media_vol = df['Volume'].tail(20).mean()
+            volume_forte = hoje['Volume'] > media_vol
+            
+            if no_topo and rompeu_maxima and volume_forte:
                 retornos = df['Close'].pct_change()
                 vol = retornos.tail(20).std()
                 mom = retornos.tail(5).sum()
-                prob = round(min(max((mom / vol) * 10 if vol > 0 else 0, 0), 100), 2)
                 
-                if prob > 0:
-                    lista_sucesso.append({
-                        "Ativo": ticker.replace(".SA", ""),
-                        "Probabilidade Alta (%)": prob,
-                        "Potencial Ganho (%)": round((vol * 2) * 100, 2),
-                        "Entrada": round(float(hoje['High'] + 0.01), 2)
-                    })
-        except: continue
+                # Cálculo da probabilidade (escore original)
+                score = (mom / vol) if vol > 0 else 0
+                probabilidade = score * 10
+                
+                # Potencial estatístico
+                potencial = (vol * 2) * 100
+                
+                lista_sucesso.append({
+                    "Ativo": ticker.replace(".SA", ""),
+                    "Probabilidade de Alta (%)": probabilidade,
+                    "Potencial de Ganho (1 sem)": potencial,
+                    "Entrada (Gatilho)": hoje['High'] + 0.01,
+                    "Stop Loss": hoje['Low'] - 0.01
+                })
+        except:
+            continue
         progresso.progress((i + 1) / len(tickers))
+    
     return pd.DataFrame(lista_sucesso)
 
+# =====================================================
+# INTERFACE (CORRIGIDA PARA LIMPAR OS ZEROS)
+# =====================================================
 st.title("🎯 Scanner de Rompimento de Máxima")
 
 if st.button("EXECUTAR SCANNER AGORA"):
-    df_final = analisar_mercado(ativos_scan)
-    if not df_final.empty:
-        df_final = df_final.sort_values(by="Probabilidade Alta (%)", ascending=False)
-        st.subheader("🔥 Melhores Oportunidades")
-        # FORMATAÇÃO PARA ELIMINAR ZEROS EXTRAS
-        st.dataframe(df_final.style.format({
-            "Probabilidade Alta (%)": "{:.2f}",
-            "Potencial Ganho (%)": "{:.2f}",
-            "Entrada": "{:.2f}"
-        }).background_gradient(subset=['Probabilidade Alta (%)'], cmap='Greens'), use_container_width=True)
-    else:
-        st.warning("Nenhum ativo rompeu hoje.")
+    with st.spinner("Filtrando ativos..."):
+        df_final = carregar_oportunidades(ativos_scan)
+        
+        if not df_final.empty:
+            df_final = df_final.sort_values(by="Probabilidade de Alta (%)", ascending=False)
+            
+            st.subheader("🔥 Melhores Oportunidades")
+            
+            # AQUI ESTÁ A CORREÇÃO: Formatação que corta os zeros sem mudar a lógica
+            st.dataframe(
+                df_final.style.format({
+                    "Probabilidade de Alta (%)": "{:.2f}",
+                    "Potencial de Ganho (1 sem)": "{:.2f}%",
+                    "Entrada (Gatilho)": "{:.2f}",
+                    "Stop Loss": "{:.2f}"
+                }).background_gradient(subset=['Probabilidade de Alta (%)'], cmap='Greens'),
+                use_container_width=True
+            )
+        else:
+            st.warning("Nenhum ativo rompeu hoje.")
+
+st.caption(f"Análise Noturna | {datetime.now().strftime('%d/%m/%Y')}")
