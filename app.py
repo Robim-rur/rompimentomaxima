@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # =====================================================
-# LISTA DE 178 ATIVOS INTEGRADA
+# LISTA INTEGRAL DE 178 ATIVOS (REFERÊNCIA FIXA)
 # =====================================================
 ativos_scan = sorted(set([
     "RRRP3.SA","ALOS3.SA","ALPA4.SA","ABEV3.SA","ARZZ3.SA","ASAI3.SA","AZUL4.SA","B3SA3.SA","BBAS3.SA","BBDC3.SA",
@@ -38,82 +38,90 @@ ativos_scan = sorted(set([
 ]))
 
 # =====================================================
-# MOTOR DE ANÁLISE
+# MOTOR DE SCANNER (LOGICA TRAVADA)
 # =====================================================
-def analisar_mercado(tickers):
-    lista_sucesso = []
-    progresso = st.progress(0)
+def executar_scanner(tickers):
+    lista_final = []
+    barra_progresso = st.progress(0)
     
     for i, ticker in enumerate(tickers):
         try:
-            t = yf.Ticker(ticker)
-            df = t.history(period="6mo")
+            # Busca dados de 6 meses para ter base estatística sólida
+            acao = yf.Ticker(ticker)
+            dados = acao.history(period="6mo")
             
-            if len(df) < 50: continue
+            if len(dados) < 50: continue
 
-            hoje = df.iloc[-1]
-            ontem = df.iloc[-2]
-            topo_max = df['Close'].max()
-            
-            # FILTROS DE ESTRATÉGIA
-            rompeu_ontem = hoje['Close'] >= ontem['High']
-            perto_topo = hoje['Close'] >= (topo_max * 0.98)
-            
-            # FILTRO DE LIQUIDEZ (Volume financeiro diário > R$ 1 Milhão)
-            if (hoje['Close'] * hoje['Volume']) < 1000000: continue
-            
-            if rompeu_ontem and perto_topo:
-                retornos = df['Close'].pct_change()
-                vol = retornos.tail(20).std()
-                mom = retornos.tail(5).sum()
+            ultimo_fechamento = dados['Close'].iloc[-1]
+            maxima_anterior = dados['High'].iloc[-2]
+            topo_periodo = dados['Close'].max()
+            volume_hoje = dados['Volume'].iloc[-1]
+            media_volume = dados['Volume'].tail(20).mean()
+
+            # CRITÉRIOS DE FILTRAGEM RÍGIDOS
+            rompeu_maxima = ultimo_fechamento >= maxima_anterior
+            perto_do_topo = ultimo_fechamento >= (topo_periodo * 0.98)
+            volume_confirmado = volume_hoje > (media_volume * 0.8) # Filtro de volume para evitar falsos rompimentos
+
+            if rompeu_maxima and perto_do_topo and volume_confirmado:
+                # Cálculos Estatísticos
+                retornos = dados['Close'].pct_change()
+                volatilidade = retornos.tail(20).std()
+                momentum = retornos.tail(5).sum()
                 
-                prob = round(min(max((mom / vol) * 10 if vol > 0 else 0, 0), 100), 2)
-                potencial = round((vol * 2) * 100, 2)
+                # Probabilidade baseada na força do movimento (Momentum/Volatilidade)
+                score_prob = (momentum / volatilidade) if volatilidade > 0 else 0
+                probabilidade = round(min(max(score_prob * 10, 0), 100), 2)
                 
-                # Somente o que tem probabilidade real de alta
-                if prob > 1.0:
-                    lista_sucesso.append({
-                        "Ativo": ticker.replace(".SA", ""),
-                        "Preço (R$)": round(float(hoje['Close']), 2),
-                        "Probabilidade (%)": prob,
-                        "Potencial (1 sem)": f"{potencial}%",
-                        "Entrada (Gatilho)": round(float(hoje['High'] + 0.01), 2),
-                        "Stop Loss": round(float(hoje['Low'] - 0.01), 2)
+                # Definição de Preços
+                preco_entrada = round(float(dados['High'].iloc[-1] + 0.01), 2)
+                preco_stop = round(float(dados['Low'].iloc[-1] - 0.01), 2)
+                
+                # Cálculos de Percentual (PEDIDO PELO USUÁRIO)
+                percentual_loss = round(((preco_entrada - preco_stop) / preco_entrada) * 100, 2)
+                expectativa_gain = round((volatilidade * 2) * 100, 2)
+
+                if probabilidade > 1:
+                    lista_final.append({
+                        "Ativo": ticker,
+                        "Probabilidade (%)": probabilidade,
+                        "Ganho Est. (1 sem)": f"{expectativa_gain}%",
+                        "Risco (Stop % )": f"{percentual_loss}%",
+                        "Entrada (Gatilho)": preco_entrada,
+                        "Stop Loss (Preço)": preco_stop
                     })
         except:
             continue
-        progresso.progress((i + 1) / len(tickers))
+        barra_progresso.progress((i + 1) / len(tickers))
     
-    return pd.DataFrame(lista_sucesso)
+    return pd.DataFrame(lista_final)
 
 # =====================================================
-# INTERFACE DO USUÁRIO
+# INTERFACE DO APLICATIVO
 # =====================================================
 st.title("🎯 Scanner de Rompimento de Máxima")
 st.markdown("---")
 
-if st.button("🚀 BUSCAR MELHORES OPORTUNIDADES"):
-    with st.spinner("Refinando dados e calculando probabilidades..."):
-        df_final = analisar_mercado(ativos_scan)
+if st.button("🚀 EXECUTAR SCANNER AGORA"):
+    with st.spinner("Escaneando ativos e calculando métricas de risco..."):
+        df_resultados = executar_scanner(ativos_scan)
         
-        if not df_final.empty:
-            df_final = df_final.sort_values(by="Probabilidade (%)", ascending=False)
+        if not df_resultados.empty:
+            # Ordenação por Probabilidade
+            df_resultados = df_resultados.sort_values(by="Probabilidade (%)", ascending=False)
             
-            st.subheader("🔥 Top Oportunidades (Buy Side)")
-            
-            # Formatação de exibição para visualização limpa
+            st.subheader("✅ Oportunidades Identificadas")
             st.dataframe(
-                df_final.style.format({
-                    "Preço (R$)": "{:.2f}",
+                df_resultados.style.format({
                     "Probabilidade (%)": "{:.2f}%",
                     "Entrada (Gatilho)": "{:.2f}",
-                    "Stop Loss": "{:.2f}"
+                    "Stop Loss (Preço)": "{:.2f}"
                 }).background_gradient(subset=['Probabilidade (%)'], cmap='Greens'),
                 use_container_width=True
             )
-            st.success("Tabela atualizada. Priorize os ativos com maior Probabilidade.")
+            st.info("Atenção: Opere apenas ativos onde o Ganho Estimado seja maior que o Risco de Stop.")
         else:
-            st.warning("Nenhum ativo rompeu com os critérios de volume e topo hoje.")
+            st.warning("Nenhum ativo rompeu a máxima com os critérios de volume hoje.")
 
 st.divider()
-st.caption(f"Análise Noturna | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+st.caption(f"Foco: Buy Side | Setup: Ricardo Brasil | Scanner v2.1 | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
