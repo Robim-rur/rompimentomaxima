@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # =====================================================
-# SUA LISTA DE 178 ATIVOS (SEM ALTERAÇÕES)
+# LISTA INTEGRAL DE 178 ATIVOS (Ações, BDRs, FIIs/ETFs)
 # =====================================================
 ativos_scan = sorted(set([
     "RRRP3.SA","ALOS3.SA","ALPA4.SA","ABEV3.SA","ARZZ3.SA","ASAI3.SA","AZUL4.SA","B3SA3.SA","BBAS3.SA","BBDC3.SA",
@@ -38,7 +38,7 @@ ativos_scan = sorted(set([
 ]))
 
 # =====================================================
-# LÓGICA DO SCANNER
+# MOTOR DE ANÁLISE - MÉTODO RICARDO BRASIL
 # =====================================================
 def carregar_oportunidades(tickers):
     lista_sucesso = []
@@ -47,42 +47,47 @@ def carregar_oportunidades(tickers):
     for i, ticker in enumerate(tickers):
         try:
             t = yf.Ticker(ticker)
-            df = t.history(period="max")
+            df = t.history(period="6mo")
             
-            if len(df) < 100: continue
+            if len(df) < 50: continue
 
             hoje = df.iloc[-1]
             ontem = df.iloc[-2]
             topo_max = df['Close'].max()
             
-            # CRITÉRIOS ORIGINAIS (RESTABELECIDOS)
-            no_topo = hoje['Close'] >= (topo_max * 0.99)
-            rompeu_maxima = hoje['Close'] >= ontem['High']
+            # FILTROS DE ESTRATÉGIA
+            rompeu_ontem = hoje['Close'] >= ontem['High']
+            perto_topo = hoje['Close'] >= (topo_max * 0.98)
             
-            media_vol = df['Volume'].tail(20).mean()
-            volume_forte = hoje['Volume'] > media_vol
+            # FILTRO DE LIQUIDEZ (Mínimo R$ 1 Milhão)
+            if (hoje['Close'] * hoje['Volume']) < 1000000: continue
             
-            if no_topo and rompeu_maxima and volume_forte:
+            if rompeu_ontem and perto_topo:
                 retornos = df['Close'].pct_change()
-                vol = retornos.tail(20).std()
-                mom = retornos.tail(5).sum()
+                volatilidade = retornos.tail(20).std()
+                momentum = retornos.tail(5).sum()
                 
-                score = (mom / vol) if vol > 0 else 0
-                probabilidade = score * 10
-                potencial_perc = (vol * 2) * 100
+                # Estatística de Probabilidade
+                score = (momentum / volatilidade) if volatilidade > 0 else 0
+                probabilidade = round(min(max(score * 10, 0), 100), 2)
                 
-                # CÁLCULO DO STOP GAIN (ALVO)
-                entrada = hoje['High'] + 0.01
-                alvo = entrada * (1 + (vol * 2)) # Alvo baseado em 2 desvios
+                # CÁLCULOS DE PREÇO E RISCO
+                entrada = round(float(hoje['High'] + 0.01), 2)
+                stop_preco = round(float(hoje['Low'] - 0.01), 2)
                 
-                lista_sucesso.append({
-                    "Ativo": ticker.replace(".SA", ""),
-                    "Probabilidade de Alta (%)": probabilidade,
-                    "Potencial de Ganho (%)": potencial_perc,
-                    "Entrada (Gatilho)": entrada,
-                    "Stop Gain (Alvo)": alvo,
-                    "Stop Loss": hoje['Low'] - 0.01
-                })
+                # % de Loss (Risco) e % de Gain (Estatístico)
+                risco_loss = round(((entrada - stop_preco) / entrada) * 100, 2)
+                ganho_estatistico = round((volatilidade * 2) * 100, 2)
+                
+                if probabilidade > 1:
+                    lista_sucesso.append({
+                        "Ativo": ticker.replace(".SA", ""),
+                        "Probabilidade (%)": probabilidade,
+                        "Ganho Est. (1 sem)": f"{ganho_estatistico}%",
+                        "Risco (Stop % )": f"{risco_loss}%",
+                        "Entrada (Gatilho)": entrada,
+                        "Stop Loss (Preço)": stop_preco
+                    })
         except:
             continue
         progresso.progress((i + 1) / len(tickers))
@@ -93,28 +98,29 @@ def carregar_oportunidades(tickers):
 # INTERFACE
 # =====================================================
 st.title("🎯 Scanner de Rompimento de Máxima")
+st.markdown("---")
 
-if st.button("EXECUTAR SCANNER AGORA"):
-    with st.spinner("Filtrando ativos..."):
+if st.button("🚀 BUSCAR MELHORES OPORTUNIDADES"):
+    with st.spinner("Analisando 178 ativos..."):
         df_final = carregar_oportunidades(ativos_scan)
         
         if not df_final.empty:
-            df_final = df_final.sort_values(by="Probabilidade de Alta (%)", ascending=False)
+            df_final = df_final.sort_values(by="Probabilidade (%)", ascending=False)
             
-            st.subheader("🔥 Melhores Oportunidades")
+            st.subheader("🔥 Melhores Oportunidades (Buy Side)")
             
-            # FORMATAÇÃO LIMPA (2 CASAS DECIMAIS)
+            # Formatação de exibição limpa
             st.dataframe(
                 df_final.style.format({
-                    "Probabilidade de Alta (%)": "{:.2f}",
-                    "Potencial de Ganho (%)": "{:.2f}%",
+                    "Probabilidade (%)": "{:.2f}%",
                     "Entrada (Gatilho)": "{:.2f}",
-                    "Stop Gain (Alvo)": "{:.2f}",
-                    "Stop Loss": "{:.2f}"
-                }).background_gradient(subset=['Probabilidade de Alta (%)'], cmap='Greens'),
+                    "Stop Loss (Preço)": "{:.2f}"
+                }).background_gradient(subset=['Probabilidade (%)'], cmap='Greens'),
                 use_container_width=True
             )
+            st.success("Tabela completa. Use a coluna 'Risco (Stop %)' para gerenciar seu capital.")
         else:
-            st.warning("Nenhum ativo rompeu hoje.")
+            st.warning("Nenhum ativo preenche os critérios hoje.")
 
-st.caption(f"Análise Noturna | {datetime.now().strftime('%d/%m/%Y')}")
+st.divider()
+st.caption(f"Setup: Ricardo Brasil | Atualizado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
