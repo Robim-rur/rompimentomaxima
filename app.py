@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # =====================================================
-# LISTA INTEGRAL DE 178 ATIVOS (NÃO REMOVER NENHUM)
+# LISTA INTEGRAL DE 178 ATIVOS (Ações, BDRs, FIIs/ETFs)
 # =====================================================
 ativos_scan = sorted(set([
     "RRRP3.SA","ALOS3.SA","ALPA4.SA","ABEV3.SA","ARZZ3.SA","ASAI3.SA","AZUL4.SA","B3SA3.SA","BBAS3.SA","BBDC3.SA",
@@ -38,10 +38,10 @@ ativos_scan = sorted(set([
 ]))
 
 # =====================================================
-# MOTOR DE ANÁLISE
+# MOTOR DE ANÁLISE - MÉTODO RICARDO BRASIL
 # =====================================================
-def executar_scan(tickers):
-    resultados = []
+def carregar_oportunidades(tickers):
+    lista_sucesso = []
     progresso = st.progress(0)
     
     for i, ticker in enumerate(tickers):
@@ -55,32 +55,35 @@ def executar_scan(tickers):
             ontem = df.iloc[-2]
             topo_max = df['Close'].max()
             
-            # Filtros Ricardo Brasil: Rompimento + Topo + Liquidez
-            rompeu = hoje['Close'] >= ontem['High']
-            no_topo = hoje['Close'] >= (topo_max * 0.98)
-            liquidez = (hoje['Close'] * hoje['Volume']) > 1000000
+            # FILTROS DE ESTRATÉGIA
+            rompeu_ontem = hoje['Close'] >= ontem['High']
+            perto_topo = hoje['Close'] >= (topo_max * 0.98)
             
-            if rompeu and no_topo and liquidez:
+            # FILTRO DE LIQUIDEZ (Mínimo R$ 1 Milhão)
+            if (hoje['Close'] * hoje['Volume']) < 1000000: continue
+            
+            if rompeu_ontem and perto_topo:
                 retornos = df['Close'].pct_change()
-                vol = retornos.tail(20).std()
-                mom = retornos.tail(5).sum()
+                volatilidade = retornos.tail(20).std()
+                momentum = retornos.tail(5).sum()
                 
                 # Estatística de Probabilidade
-                prob = round(min(max((mom / vol) * 10 if vol > 0 else 0, 0), 100), 2)
+                score = (momentum / volatilidade) if volatilidade > 0 else 0
+                probabilidade = round(min(max(score * 10, 0), 100), 2)
                 
-                # Valores de Operação
+                # CÁLCULOS DE PREÇO E RISCO
                 entrada = round(float(hoje['High'] + 0.01), 2)
                 stop_preco = round(float(hoje['Low'] - 0.01), 2)
                 
-                # Cálculos de Percentual (PEDIDO PELO USUÁRIO)
+                # % de Loss (Risco) e % de Gain (Estatístico)
                 risco_loss = round(((entrada - stop_preco) / entrada) * 100, 2)
-                ganho_est = round((vol * 2) * 100, 2)
+                ganho_estatistico = round((volatilidade * 2) * 100, 2)
                 
-                if prob > 1:
-                    resultados.append({
-                        "Ativo": ticker,
-                        "Probabilidade (%)": prob,
-                        "Ganho Est. (1 sem)": f"{ganho_est}%",
+                if probabilidade > 1:
+                    lista_sucesso.append({
+                        "Ativo": ticker.replace(".SA", ""),
+                        "Probabilidade (%)": probabilidade,
+                        "Ganho Est. (1 sem)": f"{ganho_estatistico}%",
                         "Risco (Stop % )": f"{risco_loss}%",
                         "Entrada (Gatilho)": entrada,
                         "Stop Loss (Preço)": stop_preco
@@ -89,21 +92,24 @@ def executar_scan(tickers):
             continue
         progresso.progress((i + 1) / len(tickers))
     
-    return pd.DataFrame(resultados)
+    return pd.DataFrame(lista_sucesso)
 
 # =====================================================
-# INTERFACE DO APP
+# INTERFACE
 # =====================================================
 st.title("🎯 Scanner de Rompimento de Máxima")
-st.write("Análise Buy Side: Topo Histórico + Volume + Probabilidade")
+st.markdown("---")
 
 if st.button("🚀 BUSCAR MELHORES OPORTUNIDADES"):
-    with st.spinner("Escaneando 178 ativos..."):
-        df_final = executar_scan(ativos_scan)
+    with st.spinner("Analisando 178 ativos..."):
+        df_final = carregar_oportunidades(ativos_scan)
         
         if not df_final.empty:
             df_final = df_final.sort_values(by="Probabilidade (%)", ascending=False)
-            st.subheader("🔥 Resultados do Filtro")
+            
+            st.subheader("🔥 Melhores Oportunidades (Buy Side)")
+            
+            # Formatação de exibição limpa
             st.dataframe(
                 df_final.style.format({
                     "Probabilidade (%)": "{:.2f}%",
@@ -112,9 +118,9 @@ if st.button("🚀 BUSCAR MELHORES OPORTUNIDADES"):
                 }).background_gradient(subset=['Probabilidade (%)'], cmap='Greens'),
                 use_container_width=True
             )
-            st.success("Tabela gerada com sucesso.")
+            st.success("Tabela completa. Use a coluna 'Risco (Stop %)' para gerenciar seu capital.")
         else:
-            st.warning("Nenhum rompimento detectado hoje nos 178 ativos.")
+            st.warning("Nenhum ativo preenche os critérios hoje.")
 
 st.divider()
-st.caption(f"Foco exclusivo em Compra | Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+st.caption(f"Setup: Ricardo Brasil | Atualizado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
