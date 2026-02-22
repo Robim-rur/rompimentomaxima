@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # =====================================================
-# LISTA INTEGRAL DE 178 ATIVOS (NÃO ALTERADA)
+# LISTA INTEGRAL DE 178 ATIVOS
 # =====================================================
 ativos_scan = sorted(set([
     "RRRP3.SA","ALOS3.SA","ALPA4.SA","ABEV3.SA","ARZZ3.SA","ASAI3.SA","AZUL4.SA","B3SA3.SA","BBAS3.SA","BBDC3.SA",
@@ -38,86 +38,92 @@ ativos_scan = sorted(set([
 ]))
 
 # =====================================================
-# MOTOR DE SCANNER (AJUSTADO PARA SETUP PURO)
+# MOTOR DO SCANNER (FILTROS DE ALTA PRECISÃO)
 # =====================================================
 def executar_scanner(tickers):
-    lista_final = []
-    barra_progresso = st.progress(0)
+    lista_sucesso = []
+    progresso = st.progress(0)
     
     for i, ticker in enumerate(tickers):
         try:
             acao = yf.Ticker(ticker)
-            # Pegamos os últimos 6 meses
-            dados = acao.history(period="6mo")
+            df = acao.history(period="1y") # 1 ano para pegar o topo real
             
-            if len(dados) < 20: continue
+            if len(df) < 100: continue
 
-            # Valores cruciais para o setup
-            ultimo_fechamento = dados['Close'].iloc[-1]
-            maxima_anterior = dados['High'].iloc[-2]
-            topo_historico_recente = dados['Close'].max()
+            # Dados Atuais
+            hoje = df.iloc[-1]
+            ontem = df.iloc[-2]
+            maxima_historica = df['Close'].max()
             
-            # FILTRO CORRIGIDO: Rompimento Real (Fechamento atual >= Máxima de ontem)
-            # E estar próximo ao topo histórico do período
-            if ultimo_fechamento >= maxima_anterior and ultimo_fechamento >= (topo_historico_recente * 0.97):
+            # --- FILTROS RÍGIDOS (O FUNIL) ---
+            # 1. Rompimento de Máxima de Ontem (Setup Ricardo Brasil)
+            rompeu_ontem = hoje['Close'] > ontem['High']
+            
+            # 2. Filtro de Topo Absoluto (Deve estar no topo ou a 0.5% dele)
+            no_topo_absoluto = hoje['Close'] >= (maxima_historica * 0.995)
+            
+            # 3. Filtro de Volume (Volume hoje deve ser maior que a média de 20 dias)
+            volume_hoje = hoje['Volume']
+            media_volume = df['Volume'].tail(20).mean()
+            volume_forte = volume_hoje > media_volume
+
+            # SÓ PASSA SE TIVER OS 3 CRITÉRIOS JUNTOS
+            if rompeu_ontem and no_topo_absoluto and volume_forte:
                 
-                # Cálculos de Volatilidade e Momentum para Probabilidade
-                retornos = dados['Close'].pct_change()
+                # Cálculo de Probabilidade (Sharpe Ratio simplificado)
+                retornos = df['Close'].pct_change()
                 vol = retornos.tail(20).std()
                 mom = retornos.tail(5).sum()
+                prob = round(min(max((mom / vol) * 10 if vol > 0 else 0, 0), 100), 2)
                 
-                # Probabilidade Normalizada
-                score = (mom / vol) if vol > 0 else 0
-                prob = round(min(max(score * 10, 0), 100), 2)
+                # Valores de Execução
+                entrada = round(float(hoje['High'] + 0.01), 2)
+                stop = round(float(hoje['Low'] - 0.01), 2)
                 
-                # Valores de Operação
-                entrada = round(float(dados['High'].iloc[-1] + 0.01), 2)
-                stop_preço = round(float(dados['Low'].iloc[-1] - 0.01), 2)
-                
-                # % de Loss e % de Ganho (Estatístico para 1 semana)
-                loss_percent = round(((entrada - stop_preço) / entrada) * 100, 2)
-                gain_est = round((vol * 2.5) * 100, 2) # 2.5 desvios para capturar o potencial
+                # Cálculos de % solicitados
+                risco_loss = round(((entrada - stop) / entrada) * 100, 2)
+                ganho_est = round((vol * 2) * 100, 2)
 
-                lista_final.append({
-                    "Ativo": ticker,
-                    "Probabilidade (%)": prob,
-                    "Ganho Est. (1 sem)": f"{gain_est}%",
-                    "Risco (Loss %)": f"{loss_percent}%",
-                    "Entrada (Gatilho)": entrada,
-                    "Stop Loss (Preço)": stop_preço
-                })
+                # Filtro final: Probabilidade deve ser superior a 70% para entrar na lista de elite
+                if prob > 70:
+                    lista_sucesso.append({
+                        "Ativo": ticker,
+                        "Probabilidade (%)": prob,
+                        "Ganho Est. (1 sem)": f"{ganho_est}%",
+                        "Risco (Loss %)": f"{risco_loss}%",
+                        "Entrada (Gatilho)": entrada,
+                        "Stop Loss (Preço)": stop
+                    })
         except:
             continue
-        barra_progresso.progress((i + 1) / len(tickers))
+        progresso.progress((i + 1) / len(tickers))
     
-    return pd.DataFrame(lista_final)
+    return pd.DataFrame(lista_sucesso)
 
 # =====================================================
 # INTERFACE
 # =====================================================
-st.title("🎯 Scanner de Rompimento de Máxima")
-st.markdown("---")
+st.title("🎯 Scanner de Elite: Rompimento de Máxima")
+st.markdown("### Filtro Rigoroso: Apenas Ativos com Alta Convergência")
 
-if st.button("🚀 EXECUTAR SCANNER AGORA"):
-    with st.spinner("Escaneando ativos..."):
-        df = executar_scanner(ativos_scan)
+if st.button("🚀 EXECUTAR SCANNER"):
+    with st.spinner("Analisando 178 ativos com filtros rígidos..."):
+        df_final = executar_scanner(ativos_scan)
         
-        if not df.empty:
-            # Ordenamos sempre pela maior probabilidade
-            df = df.sort_values(by="Probabilidade (%)", ascending=False)
-            
-            st.subheader("✅ Ativos que Romperam a Máxima")
+        if not df_final.empty:
+            df_final = df_final.sort_values(by="Probabilidade (%)", ascending=False)
+            st.subheader("🔥 Top Ativos para Compra")
             st.dataframe(
-                df.style.format({
+                df_final.style.format({
                     "Probabilidade (%)": "{:.2f}%",
                     "Entrada (Gatilho)": "{:.2f}",
                     "Stop Loss (Preço)": "{:.2f}"
                 }).background_gradient(subset=['Probabilidade (%)'], cmap='Greens'),
                 use_container_width=True
             )
-            st.success("Scanner finalizado. Confira o Risco (Loss %) antes de operar.")
         else:
-            st.warning("Nenhum ativo rompeu a máxima nas condições do setup hoje.")
+            st.warning("Nenhum ativo atingiu o rigor do filtro hoje. Aguarde o próximo pregão.")
 
 st.divider()
-st.caption(f"Setup: Rompimento de Máxima | Atualizado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+st.caption("Critérios: Rompimento + Topo Real + Volume Forte + Momentum > 70%")
