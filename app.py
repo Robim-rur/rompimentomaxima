@@ -38,7 +38,7 @@ ativos_scan = sorted(set([
 ]))
 
 # =====================================================
-# MOTOR DE ANÁLISE (CALIBRAGEM DA FOTO)
+# MOTOR DE ANÁLISE (LÓGICA MANTIDA)
 # =====================================================
 def executar_analise(tickers):
     lista_sucesso = []
@@ -54,35 +54,38 @@ def executar_analise(tickers):
             ontem = df.iloc[-2]
             maxima_periodo = df['Close'].max()
             
-            # FILTRO QUE GERA O RESULTADO DA FOTO
+            # FILTRO MANTIDO (IGUAL AO ANTERIOR)
             rompeu_maxima = hoje['Close'] >= ontem['High']
-            perto_do_topo = hoje['Close'] >= (maxima_periodo * 0.98) # Margem correta de 2%
+            perto_do_topo = hoje['Close'] >= (maxima_periodo * 0.98)
             
             if rompeu_maxima and perto_do_topo:
                 retornos = df['Close'].pct_change()
                 vol = retornos.tail(20).std()
                 mom = retornos.tail(5).sum()
                 
-                # Cálculo da Probabilidade (Versão Original)
                 prob_alta = (mom / vol) * 10 if vol > 0 else 0
                 prob_final = round(min(max(prob_alta, 0), 100), 2)
                 
                 # Valores de Execução
                 entrada = round(float(hoje['High'] + 0.01), 2)
-                stop_preco = round(float(hoje['Low'] - 0.01), 2)
+                stop_loss = round(float(hoje['Low'] - 0.01), 2)
                 
-                # Cálculos de Percentual (Gain e o Novo Loss)
-                gain_est = round((vol * 2) * 100, 2)
-                risco_loss = round(((entrada - stop_preco) / entrada) * 100, 2)
+                # Cálculos de Percentual e o Novo STOP GAIN
+                gain_percent = round((vol * 2) * 100, 2)
+                risco_loss = round(((entrada - stop_loss) / entrada) * 100, 2)
+                
+                # Cálculo do Preço de Stop Gain (Entrada + % de Ganho Estimado)
+                stop_gain = round(entrada * (1 + (gain_percent / 100)), 2)
                 
                 if prob_final > 1:
                     lista_sucesso.append({
                         "Ativo": ticker.replace(".SA", ""),
                         "Probabilidade Alta (%)": prob_final,
-                        "Potencial Ganhos (%)": gain_est,
+                        "Potencial Ganhos (%)": gain_percent,
                         "Risco (Loss %)": risco_loss,
                         "Entrada": entrada,
-                        "Stop Loss": stop_preco
+                        "Stop Gain": stop_gain,
+                        "Stop Loss": stop_loss
                     })
         except:
             continue
@@ -91,7 +94,7 @@ def executar_analise(tickers):
     return pd.DataFrame(lista_sucesso)
 
 # =====================================================
-# INTERFACE COM DESTAQUE POR CORES
+# INTERFACE
 # =====================================================
 st.title("🎯 Scanner de Rompimento de Máxima")
 st.markdown("---")
@@ -102,24 +105,22 @@ if st.button("🚀 EXECUTAR SCANNER AGORA"):
         
         if not df_final.empty:
             st.subheader("🔥 Melhores Oportunidades")
-            
-            # Ordenação por Probabilidade
             df_final = df_final.sort_values(by="Probabilidade Alta (%)", ascending=False)
             
-            # Aplicação das CORES (Heatmap) que haviam sumido
             st.dataframe(
                 df_final.style.format({
                     "Probabilidade Alta (%)": "{:.2f}%",
                     "Potencial Ganhos (%)": "{:.2f}%",
                     "Risco (Loss %)": "{:.2f}%",
                     "Entrada": "{:.2f}",
+                    "Stop Gain": "{:.2f}",
                     "Stop Loss": "{:.2f}"
                 }).background_gradient(subset=['Probabilidade Alta (%)', 'Potencial Ganhos (%)'], cmap='Greens'),
                 use_container_width=True
             )
-            st.success("Tabela gerada com sucesso.")
+            st.success("Scanner finalizado com sucesso.")
         else:
             st.warning("Nenhum ativo preenche os critérios técnicos hoje.")
 
 st.divider()
-st.caption(f"Foco: Buy Side | Setup: Ricardo Brasil | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+st.caption(f"Foco: Buy Side | Setup: Rompimento de Máxima | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
