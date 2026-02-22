@@ -52,9 +52,10 @@ def executar_analise(tickers):
 
             hoje = df.iloc[-1]
             ontem = df.iloc[-2]
-            maxima_periodo = df['Close'].max()
+
+            # FILTRO: Máxima dos últimos 20 candles para rompimento de curto prazo
+            maxima_periodo = df['Close'].tail(20).max()
             
-            # FILTRO MANTIDO EXATAMENTE COMO VOCÊ APROVOU
             rompeu_maxima = hoje['Close'] >= ontem['High']
             perto_do_topo = hoje['Close'] >= (maxima_periodo * 0.98)
             
@@ -66,22 +67,19 @@ def executar_analise(tickers):
                 prob_alta = (mom / vol) * 10 if vol > 0 else 0
                 prob_final = round(min(max(prob_alta, 0), 100), 2)
                 
-                # Valores de Execução
                 entrada = round(float(hoje['High'] + 0.01), 2)
                 stop_loss_preco = round(float(hoje['Low'] - 0.01), 2)
                 
-                # Cálculos de Percentual
                 gain_percent = round((vol * 2) * 100, 2)
                 risco_loss = round(((entrada - stop_loss_preco) / entrada) * 100, 2)
                 
-                # CÁLCULO RISCO/RETORNO (NOVIDADE)
+                # Relação Risco/Retorno
                 rr_ratio = round(gain_percent / risco_loss, 2) if risco_loss > 0 else 0
                 
                 if rr_ratio >= 1.5: status_rr = "✅ BOM"
                 elif rr_ratio >= 1.0: status_rr = "⚠️ ATENÇÃO"
                 else: status_rr = "❌ RUIM"
                 
-                # Preço de Alvo
                 stop_gain_preco = round(entrada * (1 + (gain_percent / 100)), 2)
                 
                 if prob_final > 1:
@@ -134,4 +132,3 @@ if st.button("🚀 EXECUTAR SCANNER AGORA"):
 
 st.divider()
 st.caption(f"Foco: Buy Side | Setup: Rompimento de Máxima | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-       
