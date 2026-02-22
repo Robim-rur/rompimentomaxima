@@ -7,7 +7,7 @@ from datetime import datetime
 # =====================================================
 # CONFIGURAÇÃO DA PÁGINA
 # =====================================================
-st.set_config = st.set_page_config(
+st.set_page_config(
     page_title="Scanner de Rompimento de Máxima",
     layout="wide"
 )
@@ -38,7 +38,7 @@ ativos_scan = sorted(set([
 ]))
 
 # =====================================================
-# LÓGICA DO SCANNER (RESTAURADA)
+# LÓGICA DO SCANNER
 # =====================================================
 def carregar_oportunidades(tickers):
     lista_sucesso = []
@@ -55,7 +55,7 @@ def carregar_oportunidades(tickers):
             ontem = df.iloc[-2]
             topo_max = df['Close'].max()
             
-            # CRITÉRIOS QUE FUNCIONARAM NA SUA PRIMEIRA TENTATIVA
+            # CRITÉRIOS ORIGINAIS (RESTABELECIDOS)
             no_topo = hoje['Close'] >= (topo_max * 0.99)
             rompeu_maxima = hoje['Close'] >= ontem['High']
             
@@ -67,18 +67,20 @@ def carregar_oportunidades(tickers):
                 vol = retornos.tail(20).std()
                 mom = retornos.tail(5).sum()
                 
-                # Cálculo da probabilidade (escore original)
                 score = (mom / vol) if vol > 0 else 0
                 probabilidade = score * 10
+                potencial_perc = (vol * 2) * 100
                 
-                # Potencial estatístico
-                potencial = (vol * 2) * 100
+                # CÁLCULO DO STOP GAIN (ALVO)
+                entrada = hoje['High'] + 0.01
+                alvo = entrada * (1 + (vol * 2)) # Alvo baseado em 2 desvios
                 
                 lista_sucesso.append({
                     "Ativo": ticker.replace(".SA", ""),
                     "Probabilidade de Alta (%)": probabilidade,
-                    "Potencial de Ganho (1 sem)": potencial,
-                    "Entrada (Gatilho)": hoje['High'] + 0.01,
+                    "Potencial de Ganho (%)": potencial_perc,
+                    "Entrada (Gatilho)": entrada,
+                    "Stop Gain (Alvo)": alvo,
                     "Stop Loss": hoje['Low'] - 0.01
                 })
         except:
@@ -88,7 +90,7 @@ def carregar_oportunidades(tickers):
     return pd.DataFrame(lista_sucesso)
 
 # =====================================================
-# INTERFACE (CORRIGIDA PARA LIMPAR OS ZEROS)
+# INTERFACE
 # =====================================================
 st.title("🎯 Scanner de Rompimento de Máxima")
 
@@ -101,12 +103,13 @@ if st.button("EXECUTAR SCANNER AGORA"):
             
             st.subheader("🔥 Melhores Oportunidades")
             
-            # AQUI ESTÁ A CORREÇÃO: Formatação que corta os zeros sem mudar a lógica
+            # FORMATAÇÃO LIMPA (2 CASAS DECIMAIS)
             st.dataframe(
                 df_final.style.format({
                     "Probabilidade de Alta (%)": "{:.2f}",
-                    "Potencial de Ganho (1 sem)": "{:.2f}%",
+                    "Potencial de Ganho (%)": "{:.2f}%",
                     "Entrada (Gatilho)": "{:.2f}",
+                    "Stop Gain (Alvo)": "{:.2f}",
                     "Stop Loss": "{:.2f}"
                 }).background_gradient(subset=['Probabilidade de Alta (%)'], cmap='Greens'),
                 use_container_width=True
