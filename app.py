@@ -4,17 +4,10 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-# =====================================================
 # CONFIGURAÇÃO DA PÁGINA
-# =====================================================
-st.set_page_config(
-    page_title="Scanner de Rompimento de Máxima",
-    layout="wide"
-)
+st.set_page_config(page_title="Scanner de Rompimento de Máxima", layout="wide")
 
-# =====================================================
-# LISTA DE 178 ATIVOS (ESTÁTICA NO CÓDIGO)
-# =====================================================
+# LISTA COMPLETA INTEGRADA
 ativos_scan = sorted(set([
     "RRRP3.SA","ALOS3.SA","ALPA4.SA","ABEV3.SA","ARZZ3.SA","ASAI3.SA","AZUL4.SA","B3SA3.SA","BBAS3.SA","BBDC3.SA",
     "BBDC4.SA","BBSE3.SA","BEEF3.SA","BPAC11.SA","BRAP4.SA","BRFS3.SA","BRKM5.SA","CCRO3.SA","CMIG4.SA","CMIN3.SA",
@@ -37,86 +30,58 @@ ativos_scan = sorted(set([
     "KNCR11.SA","KNIP11.SA","CPTS11.SA","IRDM11.SA","DIVO11.SA","NDIV11.SA","SPUB11.SA"
 ]))
 
-# =====================================================
-# MOTOR DE PROBABILIDADE
-# =====================================================
-def carregar_oportunidades(tickers):
-    lista_sucesso = []
-    progresso = st.progress(0)
+def analisar():
+    st.title("🎯 Scanner de Rompimento de Máxima")
     
-    for i, ticker in enumerate(tickers):
-        try:
-            t = yf.Ticker(ticker)
-            df = t.history(period="max")
-            
-            if len(df) < 100: continue
-
-            # Dados de Preço
-            hoje = df.iloc[-1]
-            ontem = df.iloc[-2]
-            topo_max = df['Close'].max()
-            
-            # 1. Filtro Ricardo Brasil: Fechamento >= Máxima de Ontem
-            rompeu_ontem = hoje['Close'] >= ontem['High']
-            
-            # 2. Filtro Topo: Está a 1% do Topo ou acima
-            perto_topo = hoje['Close'] >= (topo_max * 0.99)
-            
-            # 3. Filtro Volume: Volume de hoje > Média de 20 dias
-            media_vol = df['Volume'].tail(20).mean()
-            vol_confirmado = hoje['Volume'] > media_vol
-            
-            if rompeu_ontem and perto_topo and vol_confirmado:
-                # Estatística de Probabilidade (Sharpe Adaptado)
-                retornos = df['Close'].pct_change()
-                volatilidade = retornos.tail(20).std()
-                momentum = retornos.tail(5).sum()
-                
-                # Normalização da probabilidade (0 a 100)
-                score = (momentum / volatilidade) if volatilidade > 0 else 0
-                probabilidade = round(min(max(score * 10, 0), 100), 1)
-                
-                # Potencial de crescimento baseado em 2 desvios padrões (1 semana)
-                potencial = round((volatilidade * 2) * 100, 2)
-                
-                # Só adiciona se a probabilidade for positiva (foco em alta)
-                if probabilidade > 0:
-                    lista_sucesso.append({
-                        "Ativo": ticker,
-                        "Preço": round(hoje['Close'], 2),
-                        "Probabilidade de Alta (%)": probabilidade,
-                        "Potencial de Ganho (1 sem)": f"{potencial}%",
-                        "Entrada (Gatilho)": round(hoje['High'] + 0.01, 2),
-                        "Stop Loss": round(hoje['Low'] - 0.01, 2)
-                    })
-        except:
-            continue
-        progresso.progress((i + 1) / len(tickers))
-    
-    return pd.DataFrame(lista_sucesso)
-
-# =====================================================
-# INTERFACE FINAL
-# =====================================================
-st.title("🎯 Scanner de Rompimento de Máxima")
-st.markdown("---")
-
-if st.button("🚀 BUSCAR MELHORES OPORTUNIDADES"):
-    with st.spinner("Analisando volume e estatísticas de 178 ativos..."):
-        df_final = carregar_oportunidades(ativos_scan)
+    if st.button("🚀 EXECUTAR SCANNER AGORA"):
+        resultados = []
+        progresso = st.progress(0)
         
-        if not df_final.empty:
-            # Ordenar pela maior probabilidade de alta
-            df_final = df_final.sort_values(by="Probabilidade de Alta (%)", ascending=False)
+        for i, ticker in enumerate(ativos_scan):
+            try:
+                t = yf.Ticker(ticker)
+                df = t.history(period="1y")
+                if len(df) < 50: continue
+
+                hoje = df.iloc[-1]
+                ontem = df.iloc[-2]
+                topo = df['Close'].max()
+
+                # Filtros Rigorosos
+                if hoje['Close'] > ontem['High'] and hoje['Close'] >= (topo * 0.98):
+                    media_vol = df['Volume'].tail(20).mean()
+                    if hoje['Volume'] > media_vol:
+                        rets = df['Close'].pct_change()
+                        vol = rets.tail(20).std()
+                        mom = rets.tail(5).sum()
+                        
+                        prob = round(min(max((mom / vol) * 10, 0), 100), 1)
+                        ganho_num = round((vol * 2) * 100, 2)
+
+                        if prob > 0.5:
+                            resultados.append({
+                                "Ativo": ticker.replace(".SA", ""),
+                                "Probabilidade Alta (%)": prob,
+                                "Potencial Ganho (%)": ganho_num,
+                                "Entrada": round(hoje['High'] + 0.01, 2),
+                                "Stop Loss": round(hoje['Low'] - 0.01, 2),
+                                "Preço": round(hoje['Close'], 2)
+                            })
+            except: continue
+            progresso.progress((i + 1) / len(ativos_scan))
+
+        if resultados:
+            df_final = pd.DataFrame(resultados).sort_values(by="Probabilidade Alta (%)", ascending=False)
             
-            st.subheader("🔥 Top Ativos para Compra (Rompimento Confirmado)")
+            # FORMATANDO O QUADRO COM CORES EXPLÍCITAS
+            st.subheader("🔥 Melhores Oportunidades")
             st.dataframe(
-                df_final.style.background_gradient(subset=['Probabilidade de Alta (%)'], cmap='Greens'),
+                df_final.style.background_gradient(subset=['Probabilidade Alta (%)'], cmap='Greens')
+                .background_gradient(subset=['Potencial Ganho (%)'], cmap='YlGn'),
                 use_container_width=True
             )
-            st.info("Programar ordens apenas para os ativos acima. Eles possuem o maior alinhamento estatístico.")
         else:
-            st.warning("Nenhum ativo da lista preenche os critérios de Rompimento de Topo com Volume hoje.")
+            st.warning("Nenhum ativo rompeu com volume forte hoje.")
 
-st.divider()
-st.caption("Foco: Apenas Compra | Setup: Ricardo Brasil + Estatística Semanal")
+if __name__ == "__main__":
+    analisar()
