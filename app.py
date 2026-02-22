@@ -54,7 +54,7 @@ def executar_analise(tickers):
             ontem = df.iloc[-2]
             maxima_periodo = df['Close'].max()
             
-            # FILTRO MANTIDO CONFORME RESULTADO ANTERIOR
+            # FILTRO MANTIDO EXATAMENTE COMO VOCÊ APROVOU
             rompeu_maxima = hoje['Close'] >= ontem['High']
             perto_do_topo = hoje['Close'] >= (maxima_periodo * 0.98)
             
@@ -74,6 +74,13 @@ def executar_analise(tickers):
                 gain_percent = round((vol * 2) * 100, 2)
                 risco_loss = round(((entrada - stop_loss_preco) / entrada) * 100, 2)
                 
+                # CÁLCULO RISCO/RETORNO (NOVIDADE)
+                rr_ratio = round(gain_percent / risco_loss, 2) if risco_loss > 0 else 0
+                
+                if rr_ratio >= 1.5: status_rr = "✅ BOM"
+                elif rr_ratio >= 1.0: status_rr = "⚠️ ATENÇÃO"
+                else: status_rr = "❌ RUIM"
+                
                 # Preço de Alvo
                 stop_gain_preco = round(entrada * (1 + (gain_percent / 100)), 2)
                 
@@ -83,6 +90,8 @@ def executar_analise(tickers):
                         "Probabilidade Alta (%)": prob_final,
                         "Potencial Ganhos (%)": gain_percent,
                         "Risco (Loss %)": risco_loss,
+                        "Relação R/R": rr_ratio,
+                        "Status R/R": status_rr,
                         "Entrada": entrada,
                         "Stop Gain": stop_gain_preco,
                         "Stop Loss": stop_loss_preco
@@ -112,6 +121,7 @@ if st.button("🚀 EXECUTAR SCANNER AGORA"):
                     "Probabilidade Alta (%)": "{:.2f}%",
                     "Potencial Ganhos (%)": "{:.2f}%",
                     "Risco (Loss %)": "{:.2f}%",
+                    "Relação R/R": "{:.2f}",
                     "Entrada": "{:.2f}",
                     "Stop Gain": "{:.2f}",
                     "Stop Loss": "{:.2f}"
@@ -124,3 +134,4 @@ if st.button("🚀 EXECUTAR SCANNER AGORA"):
 
 st.divider()
 st.caption(f"Foco: Buy Side | Setup: Rompimento de Máxima | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+       
